@@ -699,8 +699,38 @@ function defaultSubjects(){ return ['语文','数学','英语','物理','化学'
 function defaultHw(){ return ['大本','小本','练习册①','练习册②','试卷①','试卷②','听默写','背诵','错题本']; }
 
 function defaultStudents(){
-  // 全校版：每个班初始名单都为空，请在「设置 → 学生名单（分组）」里按「组号 姓名」逐行粘贴。
+  // 每个班初始名单为空：到「设置 → 学生名单（分组）」按「组号 姓名」逐行粘贴。
+  // 新班第一次打开时会调用下面的 makeDemoRoster() 给一份示例名单，方便直接看到效果。
   return [];
+}
+
+/* ===== 示例名单（仅用于新班第一次打开时占位，姓名全部虚构，不对应任何真实学生） =====
+   每一组都是常见字组合，跟着班号变，所以 9 个班的名字各不相同。
+   想换成自己班：设置 → 学生名单（分组），粘贴自己的名单覆盖掉即可。 */
+const DEMO_SURNAME = ['张','李','王','刘','陈','杨','赵','黄','周','吴','徐','孙','马','朱','胡','高'];
+const DEMO_GIVEN = ['子墨','嘉怡','宇航','思远','雨桐','浩然','欣怡','明轩','若曦','泽宇','诗涵','天佑',
+                    '佳琪','俊杰','晨曦','梦洁','文博','雅雯','振宇','静怡','一鸣','梓涵','皓轩','婉清'];
+function makeDemoRoster(cls){
+  const key = String(cls || 'demo');
+  /* FNV-1a 哈希：如果只用字符码简单累加，不同班号算出的种子会相差 16 的倍数，
+     取模后撞在一起，导致好几个班拿到一模一样的名单。换成 FNV-1a 后分布均匀。 */
+  let h = 2166136261;
+  for (let i = 0; i < key.length; i++) {
+    h ^= key.charCodeAt(i);
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  const next = n => { h = (Math.imul(h ^ (h >>> 15), 2246822507) + 1) >>> 0; return h % n; };
+  const out = [], used = new Set();
+  const PER_GROUP = 4, GROUPS = 3;                 // 12 人 / 3 组 / 每组 4 人
+  for (let i = 0; i < PER_GROUP * GROUPS; i++) {
+    let name, guard = 0;
+    do {
+      name = DEMO_SURNAME[next(DEMO_SURNAME.length)] + DEMO_GIVEN[next(DEMO_GIVEN.length)];
+    } while (used.has(name) && guard++ < 200);     // 同班内去重
+    used.add(name);
+    out.push({ id: 's' + (i + 1), name: name, group: Math.floor(i / PER_GROUP) + 1 });
+  }
+  return out;
 }
 
 function defaultData(){
@@ -740,7 +770,20 @@ function normalize(d){
    页面里没有任何后端地址、没有向外的数据提交、也没有可被枚举的数据端点。 */
 async function initData(){
   MODE = 'local';
-  DATA = normalize(loadLocal());
+  let local = null;
+  try{
+    const raw = localStorage.getItem(KEY);
+    if(raw){ const d = JSON.parse(raw); if(d && d.settings && d.records) local = d; }
+  }catch(e){}
+  if(local){
+    DATA = normalize(local);
+  } else {
+    /* 这个班第一次打开：给一份虚构的示例名单，先看到界面是什么样。
+       只注入这一次，之后一切以你自己的数据为准（删空了也不会自动补回来）。 */
+    DATA = normalize(defaultData());
+    DATA.settings.students = makeDemoRoster(CURRENT_CLASS);
+    try{ localStorage.setItem(KEY, JSON.stringify(DATA)); }catch(e){}
+  }
 }
 
 function persist(){
